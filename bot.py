@@ -104,7 +104,12 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"📩 پیام جدید از {user.full_name} (@{user.username or 'ندارد'})\n🆔 {user.id}:\n\n{update.message.text}",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-        await update.message.reply_text("پیامت ارسال شد! منتظر پاسخ باش 🌟")
+        await update.message.reply_text(
+    "پیامت ارسال شد! منتظر پاسخ باش 🌟",
+    reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton("📝 پیام جدید", callback_data="send")
+    ]])
+)
 
 # ---------------------- پاسخ ادمین ----------------------
 async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +117,13 @@ async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reply_to:
         try:
             await context.bot.send_message(chat_id=reply_to, text=f"📬 پاسخ ادمین:\n{update.message.text}")
-            await update.message.reply_text("✅ پیام ارسال شد")
+            await update.message.reply_text(
+    "✅ پیام ارسال شد",
+    reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton("✉️ پاسخ مجدد", callback_data=f"reply:{reply_to}")
+    ]])
+)
+            
         except:
             await update.message.reply_text("❌ ارسال پیام به کاربر ناموفق بود")
         context.user_data['reply_to'] = None

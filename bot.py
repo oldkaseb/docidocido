@@ -171,13 +171,31 @@ async def forall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
         await update.message.reply_text("لطفاً روی پیامی ریپلای کن")
         return
-    text = update.message.reply_to_message.text
-    for u in get_users():
+
+    reply = update.message.reply_to_message
+    users = get_users()
+    sent = 0
+
+    for u in users:
         try:
-            await context.bot.send_message(chat_id=u['id'], text=text)
-        except:
+            uid = u['id']
+            if reply.text:
+                await context.bot.send_message(chat_id=uid, text=reply.text)
+            elif reply.photo:
+                await context.bot.send_photo(chat_id=uid, photo=reply.photo[-1].file_id, caption=reply.caption or "")
+            elif reply.video:
+                await context.bot.send_video(chat_id=uid, video=reply.video.file_id, caption=reply.caption or "")
+            elif reply.animation:
+                await context.bot.send_animation(chat_id=uid, animation=reply.animation.file_id, caption=reply.caption or "")
+            elif reply.document:
+                await context.bot.send_document(chat_id=uid, document=reply.document.file_id, caption=reply.caption or "")
+            elif reply.voice:
+                await context.bot.send_voice(chat_id=uid, voice=reply.voice.file_id, caption=reply.caption or "")
+            sent += 1
+        except Exception as e:
             continue
-    await update.message.reply_text("📨 پیام همگانی ارسال شد")
+
+    await update.message.reply_text(f"📨 پیام همگانی برای {sent} کاربر ارسال شد")
 
 async def help_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in get_admins(): return

@@ -119,6 +119,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📊 آمار کاربران:\n"
     for u in users:
         msg += f"- {u['name']} | {u['id']} | @{u['username']} | {u['joined']}\n"
+    msg += f"\n👥 تعداد کل کاربران: {len(users)}"
     await update.message.reply_text(msg or "هیچ کاربری نیست")
 
 async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):

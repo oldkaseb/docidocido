@@ -1,258 +1,201 @@
-import json
 import os
+import json
 from datetime import datetime
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-# مسیر فایل‌ها
-USERS_FILE = 'data/users.json'
-BLOCKED_FILE = 'data/blocked.json'
-ADMINS_FILE = 'data/admins.json'
-WELCOME_FILE = 'data/welcome.json'
-
-# توکن ربات از ENV
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+INITIAL_ADMINS = os.getenv("INITIAL_ADMINS", "")
 
-# اگر ENV برای adminها تعریف شده، آن‌ها را به فایل json اضافه کن
-initial_admins = os.getenv("INITIAL_ADMINS", "")
-if initial_admins:
-    try:
-        ids = [int(i.strip()) for i in initial_admins.split(",")]
-        if os.path.exists(ADMINS_FILE):
-            with open(ADMINS_FILE, 'r') as f:
-                existing = json.load(f)
-        else:
-            existing = []
-        updated = list(set(existing + ids))
-        with open(ADMINS_FILE, 'w') as f:
-            json.dump(updated, f)
-    except Exception as e:
-        print("خطا در بارگذاری اولیه ادمین‌ها:", e)
+ADMINS_FILE = "admins.json"
+BLOCKED_FILE = "blocked.json"
+USERS_FILE = "users.json"
+WELCOME_FILE = "welcome.json"
 
-# توابع کمکی
+# ---------------------- ابزار ذخیره و خواندن فایل ----------------------
 def load_json(path, default):
     if not os.path.exists(path):
-        with open(path, 'w') as f: json.dump(default, f)
+        with open(path, 'w') as f:
+            json.dump(default, f)
         return default
-    with open(path, 'r') as f: return json.load(f)
+    with open(path, 'r') as f:
+        return json.load(f)
 
 def save_json(path, data):
-    with open(path, 'w') as f: json.dump(data, f)
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
 
+# ---------------------- مدیریت فایل‌های دیتا ----------------------
 def get_admins():
-    return load_json(ADMINS_FILE, [])
+    admins = load_json(ADMINS_FILE, [])
+    if INITIAL_ADMINS:
+        admins += [int(i) for i in INITIAL_ADMINS.split(",") if i.isdigit()]
+        admins = list(set(admins))
+    return admins
 
-def is_admin(user_id):
-    return user_id in get_admins()
+def get_blocked():
+    return load_json(BLOCKED_FILE, [])
+
+def get_users():
+    return load_json(USERS_FILE, [])
 
 def get_welcome():
-    return load_json(WELCOME_FILE, "سلام! برای ارتباط با ادمین، روی دکمه زیر کلیک کن 😊")
+    return load_json(WELCOME_FILE, {"text": "سلام! به ربات دکتر گشاد خوش اومدی 🤖\nبرای ارسال پیام به ما دکمه زیر رو بزن 😁"})
 
-def block_user(user_id):
-    blocked = load_json(BLOCKED_FILE, [])
-    if user_id not in blocked:
-        blocked.append(user_id)
-        save_json(BLOCKED_FILE, blocked)
-
-def unblock_user(user_id):
-    blocked = load_json(BLOCKED_FILE, [])
-    if user_id in blocked:
-        blocked.remove(user_id)
-        save_json(BLOCKED_FILE, blocked)
-
-def is_blocked(user_id):
-    return user_id in load_json(BLOCKED_FILE, [])
-
-# پیام استارت
+# ---------------------- پیام خوش‌آمد ----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    users = load_json(USERS_FILE, {})
-    if str(user.id) not in users:
-        users[str(user.id)] = {
-            "name": user.full_name,
-            "username": user.username,
-            "start_time": datetime.now().isoformat()
-        }
-        save_json(USERS_FILE, users)
-
-    keyboard = [[InlineKeyboardButton("✉️ ارسال پیام", callback_data="send_message")]]
-    await update.message.reply_text(get_welcome(), reply_markup=InlineKeyboardMarkup(keyboard))
-
-# دریافت درخواست کاربر
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    await query.answer()
-
-    if query.data == "send_message":
-        if is_blocked(user_id):
-            await query.message.reply_text("شما توسط ادمین مسدود شده‌اید.")
-        else:
-            context.user_data["awaiting_message"] = True
-            await query.message.reply_text("پیامتو بنویس تا برسونم به ادمین‌ها 📩")
-
-    elif query.data.startswith("reply_"):
-        uid = int(query.data.split("_")[1])
-        context.user_data["reply_to"] = uid
-        await query.message.reply_text("پاسخت رو بنویس تا برای کاربر ارسال بشه:")
-
-    elif query.data.startswith("new_"):
-        uid = int(query.data.split("_")[1])
-        context.user_data["reply_to"] = uid
-        await query.message.reply_text("پاسخ جدیدت رو بنویس:")
-
-# پیام از کاربر
-async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if is_blocked(user.id): return
-
-    if context.user_data.get("awaiting_message"):
-        context.user_data["awaiting_message"] = False
-        msg = update.message.text
-
-        admins = get_admins()
-        for admin_id in admins:
-            try:
-                keyboard = [[
-                    InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{user.id}")
-                ]]
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"📨 پیام از {user.full_name} (@{user.username or 'بدون'}):\n\n{msg}",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-            except Exception:
-                continue
-
-        await update.message.reply_text("✅ پیامت فرستاده شد. به‌زودی جوابتو دریافت می‌کنی.")
-        keyboard = [[InlineKeyboardButton("✉️ ارسال پیام جدید", callback_data="send_message")]]
-        await update.message.reply_text("اگه پیام دیگه‌ای داری، دکمه زیر رو بزن 👇", reply_markup=InlineKeyboardMarkup(keyboard))
-
-# پیام از ادمین
-async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not is_admin(user_id): return
-
-    if "reply_to" in context.user_data:
-        target = context.user_data.pop("reply_to")
-        try:
-            await context.bot.send_message(chat_id=target, text=update.message.text)
-            await update.message.reply_text("✅ پاسخ فرستاده شد.")
-            keyboard = [[InlineKeyboardButton("✉️ پاسخ جدید", callback_data=f"new_{target}")]]
-            await update.message.reply_text("اگه هنوز تموم نشده، از دکمه زیر استفاده کن 👇", reply_markup=InlineKeyboardMarkup(keyboard))
-        except Exception as e:
-            await update.message.reply_text(f"❌ خطا در ارسال پیام: {e}")
-
-# آمار
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    users = load_json(USERS_FILE, {})
-    text = "📊 آمار کاربران:\n"
-    for uid, data in users.items():
-        text += f"- {data['name']} (@{data['username'] or 'بدون'}) | {uid} | {data['start_time']}\n"
-    await update.message.reply_text(text or "کاربری ثبت نشده.")
-
-# پیام همگانی
-async def forall(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("روی پیام مورد نظر ریپلای بزن.")
+    blocked = get_blocked()
+    if user.id in blocked:
         return
 
-    text = update.message.reply_to_message.text
-    users = load_json(USERS_FILE, {})
-    count = 0
-    for uid in users:
-        try:
-            await context.bot.send_message(chat_id=int(uid), text=text)
-            count += 1
-        except: pass
-    await update.message.reply_text(f"✅ ارسال شد برای {count} کاربر.")
+    users = get_users()
+    if user.id not in [u['id'] for u in users]:
+        users.append({"id": user.id, "name": user.full_name, "username": user.username or "", "joined": str(datetime.now())})
+        save_json(USERS_FILE, users)
 
-# افزودن ادمین
-async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    try:
+    welcome = get_welcome()["text"]
+    keyboard = [[InlineKeyboardButton("📝 ارسال پیام", callback_data="send")]]
+    await update.message.reply_text(welcome, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    blocked = get_blocked()
+    if user_id in blocked:
+        return
+
+    if query.data == "send":
+        await context.bot.send_message(chat_id=user_id, text="خب، منتظرم! پیامتو بنویس تا بفرستمش 🚀")
+        context.user_data['awaiting_message'] = True
+
+# ---------------------- دریافت پیام از کاربر ----------------------
+async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    blocked = get_blocked()
+    if user.id in blocked:
+        return
+
+    if context.user_data.get('awaiting_message'):
+        context.user_data['awaiting_message'] = False
+
+        for admin_id in get_admins():
+            keyboard = [[InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply:{user.id}")]]
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"📩 پیام جدید از {user.full_name} (@{user.username or 'ندارد'})\n🆔 {user.id}:\n\n{update.message.text}",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        await update.message.reply_text("پیامت ارسال شد! منتظر پاسخ باش 🌟")
+
+# ---------------------- پاسخ ادمین ----------------------
+async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data.startswith("reply:"):
+        user_id = int(query.data.split(":")[1])
+        context.user_data['reply_to'] = user_id
+        await query.message.reply_text("پاسختو بنویس تا بفرستم ✉️")
+
+async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id not in get_admins():
+        return
+    reply_to = context.user_data.get('reply_to')
+    if reply_to:
+        try:
+            await context.bot.send_message(chat_id=reply_to, text=f"📬 پاسخ ادمین:\n{update.message.text}")
+            await update.message.reply_text("✅ پیام ارسال شد")
+        except:
+            await update.message.reply_text("❌ ارسال پیام به کاربر ناموفق بود")
+        context.user_data['reply_to'] = None
+
+# ---------------------- کامندهای ادمین ----------------------
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in get_admins(): return
+    users = get_users()
+    msg = "📊 آمار کاربران:\n"
+    for u in users:
+        msg += f"- {u['name']} | {u['id']} | @{u['username']} | {u['joined']}\n"
+    await update.message.reply_text(msg or "هیچ کاربری نیست")
+
+async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in get_admins(): return
+    if context.args:
         new_id = int(context.args[0])
         admins = get_admins()
-        if new_id not in admins:
-            admins.append(new_id)
-            save_json(ADMINS_FILE, admins)
-            await update.message.reply_text("✅ ادمین جدید اضافه شد.")
-        else:
-            await update.message.reply_text("از قبل ادمین بود.")
-    except:
-        await update.message.reply_text("❌ آیدی عددی معتبر وارد کن.")
+        admins.append(new_id)
+        save_json(ADMINS_FILE, list(set(admins)))
+        await update.message.reply_text(f"✅ ادمین جدید اضافه شد: {new_id}")
 
-# حذف ادمین
-async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    try:
-        rm_id = int(context.args[0])
+async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in get_admins(): return
+    if context.args:
+        rem_id = int(context.args[0])
         admins = get_admins()
-        if rm_id in admins:
-            admins.remove(rm_id)
+        if rem_id in admins:
+            admins.remove(rem_id)
             save_json(ADMINS_FILE, admins)
-            await update.message.reply_text("✅ ادمین حذف شد.")
-        else:
-            await update.message.reply_text("این آیدی ادمین نیست.")
-    except:
-        await update.message.reply_text("❌ آیدی عددی معتبر وارد کن.")
+            await update.message.reply_text(f"❌ ادمین حذف شد: {rem_id}")
 
-# بلاک و آنبلاک
 async def block(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    try:
-        block_user(int(context.args[0]))
-        await update.message.reply_text("✅ بلاک شد.")
-    except:
-        await update.message.reply_text("❌ آیدی عددی بده.")
+    if update.effective_user.id not in get_admins(): return
+    if context.args:
+        blocked = get_blocked()
+        user_id = int(context.args[0])
+        if user_id not in blocked:
+            blocked.append(user_id)
+            save_json(BLOCKED_FILE, blocked)
+            await update.message.reply_text("✅ بلاک شد")
 
 async def unblock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    try:
-        unblock_user(int(context.args[0]))
-        await update.message.reply_text("✅ آزاد شد.")
-    except:
-        await update.message.reply_text("❌ آیدی عددی بده.")
+    if update.effective_user.id not in get_admins(): return
+    if context.args:
+        blocked = get_blocked()
+        user_id = int(context.args[0])
+        if user_id in blocked:
+            blocked.remove(user_id)
+            save_json(BLOCKED_FILE, blocked)
+            await update.message.reply_text("🔓 آنبلاک شد")
 
-# تنظیم پیام خوش‌آمد
-async def set_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    new_text = update.message.text.split(None, 1)[1]
-    save_json(WELCOME_FILE, new_text)
-    await update.message.reply_text("✅ پیام خوش‌آمد تغییر کرد.")
+async def setwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in get_admins(): return
+    if context.args:
+        text = " ".join(context.args)
+        save_json(WELCOME_FILE, {"text": text})
+        await update.message.reply_text("✅ پیام خوش‌آمدگویی تنظیم شد")
 
-# راهنما
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    text = (
-        "/stats - آمار کاربران\n"
-        "/forall - پیام همگانی (با ریپلای)\n"
-        "/addadmin <id>\n"
-        "/removeadmin <id>\n"
-        "/block <id>\n"
-        "/unblock <id>\n"
-        "/setwelcome <text>\n"
-    )
-    await update.message.reply_text(text)
+async def forall(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in get_admins(): return
+    if not update.message.reply_to_message:
+        await update.message.reply_text("لطفاً روی پیامی ریپلای کن")
+        return
+    text = update.message.reply_to_message.text
+    for u in get_users():
+        try:
+            await context.bot.send_message(chat_id=u['id'], text=text)
+        except:
+            continue
+    await update.message.reply_text("📨 پیام همگانی ارسال شد")
 
-# اجرای اصلی
-if __name__ == "__main__":
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.User(get_admins())), handle_user))
-    app.add_handler(MessageHandler(filters.TEXT & filters.User(get_admins()), admin_text))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("forall", forall))
-    app.add_handler(CommandHandler("addadmin", add_admin))
-    app.add_handler(CommandHandler("removeadmin", remove_admin))
-    app.add_handler(CommandHandler("block", block))
-    app.add_handler(CommandHandler("unblock", unblock))
-    app.add_handler(CommandHandler("setwelcome", set_welcome))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.run_polling()
+# ---------------------- اجرای ربات ----------------------
+app = Application.builder().token(BOT_TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("stats", stats))
+app.add_handler(CommandHandler("addadmin", addadmin))
+app.add_handler(CommandHandler("removeadmin", removeadmin))
+app.add_handler(CommandHandler("block", block))
+app.add_handler(CommandHandler("unblock", unblock))
+app.add_handler(CommandHandler("setwelcome", setwelcome))
+app.add_handler(CommandHandler("forall", forall))
+
+app.add_handler(CallbackQueryHandler(callback_query))
+app.add_handler(CallbackQueryHandler(admin_button))
+app.add_handler(MessageHandler(filters.TEXT & filters.User(get_admins()), admin_text))
+app.add_handler(MessageHandler(filters.TEXT & (~filters.User(get_admins())), handle_user))
+
+print("ربات با موفقیت اجرا شد ✅")
+app.run_polling()

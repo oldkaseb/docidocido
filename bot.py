@@ -3,8 +3,8 @@ import json
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
-    CallbackQueryHandler, ContextTypes, BaseFilter
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -43,14 +43,13 @@ def get_users():
     return load_json(USERS_FILE, [])
 
 def get_welcome():
-    return load_json(WELCOME_FILE, {"text": "سلام! به ربات دکتر گشاد خوش اومدی 🤖\nبرای ارسال پیام به ما دکمه زیر رو بزن 😁"})
+    return load_json(WELCOME_FILE, {
+        "text": "سلام! به ربات دکتر گشاد خوش اومدی 🤖\nبرای ارسال پیام به ما دکمه زیر رو بزن 😁"
+    })
 
-# ---------------------- فیلتر زنده ادمین ----------------------
-class IsAdminFilter(BaseFilter):
-    def filter(self, message):
-        return message.from_user.id in get_admins()
-
-is_admin = IsAdminFilter()
+# ---------------------- فیلتر پویا برای ادمین‌ها ----------------------
+def is_admin_filter():
+    return filters.User(user_id=get_admins())
 
 # ---------------------- پیام خوش‌آمد ----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -213,19 +212,22 @@ async def help_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------- اجرای ربات ----------------------
 app = Application.builder().token(BOT_TOKEN).build()
 
+# دستورات مخصوص ادمین
+admin_filter = is_admin_filter()
+
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("stats", stats, is_admin))
-app.add_handler(CommandHandler("addadmin", addadmin, is_admin))
-app.add_handler(CommandHandler("removeadmin", removeadmin, is_admin))
-app.add_handler(CommandHandler("block", block, is_admin))
-app.add_handler(CommandHandler("unblock", unblock, is_admin))
-app.add_handler(CommandHandler("setwelcome", setwelcome, is_admin))
-app.add_handler(CommandHandler("forall", forall, is_admin))
-app.add_handler(CommandHandler("help", help_admin, is_admin))
+app.add_handler(CommandHandler("stats", stats).filter(admin_filter))
+app.add_handler(CommandHandler("addadmin", addadmin).filter(admin_filter))
+app.add_handler(CommandHandler("removeadmin", removeadmin).filter(admin_filter))
+app.add_handler(CommandHandler("block", block).filter(admin_filter))
+app.add_handler(CommandHandler("unblock", unblock).filter(admin_filter))
+app.add_handler(CommandHandler("setwelcome", setwelcome).filter(admin_filter))
+app.add_handler(CommandHandler("forall", forall).filter(admin_filter))
+app.add_handler(CommandHandler("help", help_admin).filter(admin_filter))
 
 app.add_handler(CallbackQueryHandler(handle_callback))
-app.add_handler(MessageHandler(filters.TEXT & is_admin, admin_text))
-app.add_handler(MessageHandler(filters.TEXT & (~is_admin), handle_user))
+app.add_handler(MessageHandler(filters.TEXT & admin_filter, admin_text))
+app.add_handler(MessageHandler(filters.TEXT & (~admin_filter), handle_user))
 
 print("ربات با موفقیت اجرا شد ✅")
 app.run_polling()

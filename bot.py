@@ -58,7 +58,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📝 ارسال پیام", callback_data="send")]]
     await update.message.reply_text(welcome, reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------------- هندلر کلی برای callback ها ----------------------
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -69,6 +70,11 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "send":
         await context.bot.send_message(chat_id=user_id, text="خب، منتظرم! پیامتو بنویس تا بفرستمش 🚀")
         context.user_data['awaiting_message'] = True
+
+    elif query.data.startswith("reply:"):
+        reply_to_user = int(query.data.split(":")[1])
+        context.user_data['reply_to'] = reply_to_user
+        await query.message.reply_text("پاسختو بنویس تا بفرستم ✉️")
 
 # ---------------------- دریافت پیام از کاربر ----------------------
 async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,14 +97,6 @@ async def handle_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("پیامت ارسال شد! منتظر پاسخ باش 🌟")
 
 # ---------------------- پاسخ ادمین ----------------------
-async def admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data.startswith("reply:"):
-        user_id = int(query.data.split(":")[1])
-        context.user_data['reply_to'] = user_id
-        await query.message.reply_text("پاسختو بنویس تا بفرستم ✉️")
-
 async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user.id not in get_admins():
@@ -208,8 +206,7 @@ app.add_handler(CommandHandler("setwelcome", setwelcome))
 app.add_handler(CommandHandler("forall", forall))
 app.add_handler(CommandHandler("help", help_admin))
 
-app.add_handler(CallbackQueryHandler(callback_query))
-app.add_handler(CallbackQueryHandler(admin_button))
+app.add_handler(CallbackQueryHandler(handle_callback))
 app.add_handler(MessageHandler(filters.TEXT & filters.User(get_admins()), admin_text))
 app.add_handler(MessageHandler(filters.TEXT & (~filters.User(get_admins())), handle_user))
 

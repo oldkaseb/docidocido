@@ -7,6 +7,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
+# ---------------------- تنظیمات اولیه ----------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 INITIAL_ADMINS = os.getenv("INITIAL_ADMINS", "")
 
@@ -212,18 +213,17 @@ async def help_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------- اجرای ربات ----------------------
 app = Application.builder().token(BOT_TOKEN).build()
 
-# دستورات مخصوص ادمین
 admin_filter = is_admin_filter()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("stats", stats).filter(admin_filter))
-app.add_handler(CommandHandler("addadmin", addadmin).filter(admin_filter))
-app.add_handler(CommandHandler("removeadmin", removeadmin).filter(admin_filter))
-app.add_handler(CommandHandler("block", block).filter(admin_filter))
-app.add_handler(CommandHandler("unblock", unblock).filter(admin_filter))
-app.add_handler(CommandHandler("setwelcome", setwelcome).filter(admin_filter))
-app.add_handler(CommandHandler("forall", forall).filter(admin_filter))
-app.add_handler(CommandHandler("help", help_admin).filter(admin_filter))
+app.add_handler(CommandHandler("stats", stats, filters=admin_filter))
+app.add_handler(CommandHandler("addadmin", addadmin, filters=admin_filter))
+app.add_handler(CommandHandler("removeadmin", removeadmin, filters=admin_filter))
+app.add_handler(CommandHandler("block", block, filters=admin_filter))
+app.add_handler(CommandHandler("unblock", unblock, filters=admin_filter))
+app.add_handler(CommandHandler("setwelcome", setwelcome, filters=admin_filter))
+app.add_handler(CommandHandler("forall", forall, filters=admin_filter))
+app.add_handler(CommandHandler("help", help_admin, filters=admin_filter))
 
 app.add_handler(CallbackQueryHandler(handle_callback))
 app.add_handler(MessageHandler(filters.TEXT & admin_filter, admin_text))
